@@ -38,10 +38,11 @@ using ..QuantumUtils
 using NamedTrajectories
 using LinearAlgebra
 using SparseArrays
-
+using ExponentialAction
 
 
 function nth_order_pade(Gₜ::Matrix, n::Int)
+    """ Compare with exp """
     @assert n ∈ keys(PADE_COEFFICIENTS) "$n is not in $(keys(PADE_COEFFICIENTS))"
     coeffs = PADE_COEFFICIENTS[n]
     Id = 1.0I(size(Gₜ, 1))
@@ -52,7 +53,20 @@ function nth_order_pade(Gₜ::Matrix, n::Int)
     return inv(B) * F
 end
 
+function nth_order_pade(Δtₜ::Number, Gₜ::Matrix, sₜ, n::Int)
+    """ Compare with expv """
+    return nth_order_pade(Δtₜ * Gₜ, n) * sₜ
+end
 
+fourth_order_pade(Δtₜ::Number, Gₜ::Matrix, sₜ) = nth_order_pade(Δtₜ, Gₜ, sₜ, 4)
+sixth_order_pade(Δtₜ::Number, Gₜ::Matrix, sₜ) = nth_order_pade(Δtₜ, Gₜ, sₜ, 6)
+eighth_order_pade(Δtₜ::Number, Gₜ::Matrix, sₜ) = nth_order_pade(Δtₜ, Gₜ, sₜ, 8)
+tenth_order_pade(Δtₜ::Number, Gₜ::Matrix, sₜ) = nth_order_pade(Δtₜ, Gₜ, sₜ, 10)
+twelth_order_pade(Δtₜ::Number, Gₜ::Matrix, sₜ) = nth_order_pade(Δtₜ, Gₜ, sₜ, 12)
+fourteenth_order_pade(Δtₜ::Number, Gₜ::Matrix, sₜ) = nth_order_pade(Δtₜ, Gₜ, sₜ, 14)
+sixteenth_order_pade(Δtₜ::Number, Gₜ::Matrix, sₜ) = nth_order_pade(Δtₜ, Gₜ, sₜ, 16)
+eighteenth_order_pade(Δtₜ::Number, Gₜ::Matrix, sₜ) = nth_order_pade(Δtₜ, Gₜ, sₜ, 18)
+twentieth_order_pade(Δtₜ::Number, Gₜ::Matrix, sₜ) = nth_order_pade(Δtₜ, Gₜ, sₜ, 20)
 
 fourth_order_pade(Gₜ::Matrix) = nth_order_pade(Gₜ, 4)
 sixth_order_pade(Gₜ::Matrix) = nth_order_pade(Gₜ, 6)

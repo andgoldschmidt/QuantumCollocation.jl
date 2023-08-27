@@ -11,16 +11,18 @@ using ..QuantumUtils
 using ..QuantumSystems
 using ..Integrators
 
-using Manifolds
+using ExponentialAction
 using LinearAlgebra
+using Manifolds
 using NamedTrajectories
+
 
 function rollout(
     ψ̃₁::AbstractVector{Float64},
     controls::AbstractMatrix{Float64},
     Δt::Union{AbstractVector{Float64}, AbstractMatrix{Float64}, Float64},
     system::QuantumSystem;
-    integrator=Integrators.fourth_order_pade
+    action=Integrators.fourth_order_pade
 )
     if Δt isa AbstractMatrix
         @assert size(Δt, 1) == 1
@@ -42,7 +44,7 @@ function rollout(
             system.G_drift,
             system.G_drives
         )
-        Ψ̃[:, t] .= integrator(Gₜ * Δt[t - 1]) * Ψ̃[:, t - 1]
+        Ψ̃[:, t] .= action(Δt[t - 1], Gₜ, Ψ̃[:, t - 1])
     end
 
     return Ψ̃
@@ -63,7 +65,7 @@ function unitary_rollout(
     controls::AbstractMatrix{Float64},
     Δt::Union{AbstractVector{Float64}, AbstractMatrix{Float64}, Float64},
     system::QuantumSystem;
-    integrator=Integrators.fourth_order_pade
+    action=Integrators.fourth_order_pade
 )
     if Δt isa AbstractMatrix
         @assert size(Δt, 1) == 1
@@ -87,7 +89,7 @@ function unitary_rollout(
         )
         Ũ⃗ₜ₋₁ = Ũ⃗[:, t - 1]
         Ũₜ₋₁ = iso_vec_to_iso_operator(Ũ⃗ₜ₋₁)
-        Ũₜ = integrator(Gₜ * Δt[t - 1]) * Ũₜ₋₁
+        Ũₜ = action(Δt[t - 1], Gₜ, Ũₜ₋₁)
         Ũ⃗ₜ = iso_operator_to_iso_vec(Ũₜ)
         Ũ⃗[:, t] .= Ũ⃗ₜ
     end
@@ -101,14 +103,14 @@ function unitary_rollout(
     controls::AbstractMatrix{Float64},
     Δt::Union{AbstractVector{Float64}, AbstractMatrix{Float64}, Float64},
     system::QuantumSystem;
-    integrator=Integrators.fourth_order_pade
+    action=Integrators.fourth_order_pade
 )
     return unitary_rollout(
         operator_to_iso_vec(Matrix{ComplexF64}(I(size(system.H_drift_real, 1)))),
         controls,
         Δt,
         system;
-        integrator=integrator
+        action=action
     )
 end
 
@@ -117,7 +119,7 @@ function unitary_rollout(
     system::QuantumSystem;
     unitary_name::Symbol=:Ũ⃗,
     drive_name::Symbol=:a,
-    integrator=exp,
+    action=expv,
     only_drift=false
 )
     Ũ⃗₁ = traj.initial[unitary_name]
@@ -132,7 +134,7 @@ function unitary_rollout(
         controls,
         Δt,
         system;
-        integrator=integrator
+        action=action
     )
 end
 
@@ -157,9 +159,9 @@ function QuantumUtils.unitary_fidelity(
     Δt::Union{AbstractVector{Float64}, AbstractMatrix{Float64}, Float64},
     system::QuantumSystem;
     subspace=nothing,
-    integrator=exp
+    action=expv
 )
-    Ũ⃗_final = unitary_rollout(controls, Δt, system; integrator=integrator)[:, end]
+    Ũ⃗_final = unitary_rollout(controls, Δt, system; action=action)[:, end]
     return unitary_fidelity(
         Ũ⃗_final,
         operator_to_iso_vec(U_goal);
