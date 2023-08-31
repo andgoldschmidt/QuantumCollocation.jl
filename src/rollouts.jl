@@ -22,7 +22,7 @@ function rollout(
     controls::AbstractMatrix{Float64},
     Δt::Union{AbstractVector{Float64}, AbstractMatrix{Float64}, Float64},
     system::QuantumSystem;
-    action=Integrators.fourth_order_pade
+    action=expv
 )
     if Δt isa AbstractMatrix
         @assert size(Δt, 1) == 1
@@ -65,7 +65,7 @@ function unitary_rollout(
     controls::AbstractMatrix{Float64},
     Δt::Union{AbstractVector{Float64}, AbstractMatrix{Float64}, Float64},
     system::QuantumSystem;
-    action=Integrators.fourth_order_pade
+    action=expv
 )
     if Δt isa AbstractMatrix
         @assert size(Δt, 1) == 1
@@ -103,7 +103,7 @@ function unitary_rollout(
     controls::AbstractMatrix{Float64},
     Δt::Union{AbstractVector{Float64}, AbstractMatrix{Float64}, Float64},
     system::QuantumSystem;
-    action=Integrators.fourth_order_pade
+    action=expv
 )
     return unitary_rollout(
         operator_to_iso_vec(Matrix{ComplexF64}(I(size(system.H_drift_real, 1)))),
