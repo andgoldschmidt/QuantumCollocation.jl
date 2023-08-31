@@ -38,7 +38,6 @@ using ..QuantumUtils
 using NamedTrajectories
 using LinearAlgebra
 using SparseArrays
-using ExponentialAction
 
 
 function nth_order_pade(Gₜ::Matrix, n::Int)
@@ -1174,4 +1173,159 @@ end
 end
 
 
+end
+
+###
+### Expv Integrator (compare to Pade)
+###
+
+abstract type QuantumExpvIntegrator <: QuantumIntegrator end
+
+# StateExpv
+struct QuantumStateExpvIntegrator{R <: Number} <: QuantumExpvIntegrator
+    G_drift::Matrix{R}
+    G_drives::Vector{Matrix{R}}
+    state_symb::Union{Symbol, Nothing}
+    drive_symb::Union{Symbol, Tuple{Vararg{Symbol}}, Nothing}
+    n_drives::Int
+    N::Int
+    dim::Int
+    autodiff::Bool
+    G::Union{Function, Nothing}
+    """
+    Construct a `QuantumStateExpvIntegrator` for the quantum system `sys`.
+
+    # Arguments
+    - `sys::QuantumSystem{R}`: the quantum system
+    - `state_symb::Symbol`: the symbol for the quantum state
+    - `drive_symb::Union{Symbol,Tuple{Vararg{Symbol}}}`: the symbol(s) for the drives
+    """
+    function QuantumStateExpvIntegrator(
+        sys::QuantumSystem{R},
+        state_symb::Union{Symbol,Nothing}=nothing,
+        drive_symb::Union{Symbol,Tuple{Vararg{Symbol}},Nothing}=nothing;
+        autodiff::Bool=true,
+        G::Union{Function, Nothing}=nothing
+    ) where R <: Real
+        @assert !isnothing(state_symb) "state_symb must be specified"
+        @assert !isnothing(drive_symb) "drive_symb must be specified"
+        n_drives = length(sys.H_drives_real)
+        N = size(sys.H_drift_real, 1)
+        dim = 2N^2
+    
+        G_drift = sys.G_drift
+        G_drives = sys.G_drives
+    
+        return new{R}(
+            G_drift,
+            G_drives,
+            state_symb,
+            drive_symb,
+            n_drives,
+            N,
+            dim,
+            autodiff,
+            G
+        )
+    end
+end
+
+state(P::QuantumStateExpvIntegrator) = P.state_symb
+controls(P::QuantumStateExpvIntegrator) = P.drive_symb
+
+@views function(P::QuantumStateExpvIntegrator{R})(
+    zₜ::AbstractVector,
+    zₜ₊₁::AbstractVector,
+    traj::NamedTrajectory
+) where R <: Real
+    ψ̃ₜ₊₁ = zₜ₊₁[traj.components[P.state_symb]]
+    ψ̃ₜ = zₜ[traj.components[P.state_symb]]
+    if P.drive_symb isa Tuple
+        aₜ = vcat([zₜ[traj.components[s]] for s in P.drive_symb]...)
+    else
+        aₜ = zₜ[traj.components[P.drive_symb]]
+    end
+    if traj.timestep isa Symbol
+        Δtₜ = zₜ[traj.components[traj.timestep]][1]
+    else
+        Δtₜ = traj.timestep
+    end
+    Gₜ = isnothing(P.G) ? G(aₜ, P.G_drift, P.G_drives) : P.G(aₜ, P.G_drift, P.G_drives)
+    return ψ̃ₜ₊₁ - expv(Δtₜ, Gₜ, ψ̃ₜ)
+end
+
+# UnitaryExpv
+struct UnitaryExpvIntegrator{R <: Number} <: QuantumExpvIntegrator
+    G_drift::Matrix{R}
+    G_drives::Vector{Matrix{R}}
+    unitary_symb::Union{Symbol, Nothing}
+    drive_symb::Union{Symbol, Tuple{Vararg{Symbol}}, Nothing}
+    n_drives::Int
+    N::Int
+    dim::Int
+    autodiff::Bool
+    G::Union{Function, Nothing}
+    """
+    Construct a `UnitaryExpvIntegrator` for the quantum system `sys`.
+
+    # Arguments
+    - `sys::QuantumSystem{R}`: the quantum system
+    - `state_symb::Symbol`: the symbol for the quantum state
+    - `drive_symb::Union{Symbol,Tuple{Vararg{Symbol}}}`: the symbol(s) for the drives
+    """
+    function UnitaryExpvIntegrator(
+        sys::QuantumSystem{R},
+        unitary_symb::Union{Symbol,Nothing}=nothing,
+        drive_symb::Union{Symbol,Tuple{Vararg{Symbol}},Nothing}=nothing;
+        autodiff::Bool=true,
+        G::Union{Function, Nothing}=nothing
+    ) where R <: Real
+        @assert !isnothing(unitary_symb) "unitary_symb must be specified"
+        @assert !isnothing(drive_symb) "drive_symb must be specified"
+        n_drives = length(sys.H_drives_real)
+        N = size(sys.H_drift_real, 1)
+        dim = 2N^2
+    
+        G_drift = sys.G_drift
+        G_drives = sys.G_drives
+    
+        return new{R}(
+            G_drift,
+            G_drives,
+            unitary_symb,
+            drive_symb,
+            n_drives,
+            N,
+            dim,
+            autodiff,
+            G
+        )
+    end
+end
+
+state(P::UnitaryExpvIntegrator) = P.unitary_symb
+controls(P::UnitaryExpvIntegrator) = P.drive_symb
+
+@views function(P::UnitaryExpvIntegrator{R})(
+    zₜ::AbstractVector,
+    zₜ₊₁::AbstractVector,
+    traj::NamedTrajectory
+) where R <: Real
+    Ũ⃗ₜ₊₁ = zₜ₊₁[traj.components[P.unitary_symb]]
+    Ũ⃗ₜ = zₜ[traj.components[P.unitary_symb]]
+    if P.drive_symb isa Tuple
+        aₜ = vcat([zₜ[traj.components[s]] for s in P.drive_symb]...)
+    else
+        aₜ = zₜ[traj.components[P.drive_symb]]
+    end
+    if traj.timestep isa Symbol
+        Δtₜ = zₜ[traj.components[traj.timestep]][1]
+    else
+        Δtₜ = traj.timestep
+    end
+    Gₜ = isnothing(P.G) ? G(aₜ, P.G_drift, P.G_drives) : P.G(aₜ, P.G_drift, P.G_drives)
+    Ũₜ₊₁ = iso_vec_to_iso_operator(Ũ⃗ₜ₊₁)
+    Ũₜ = iso_vec_to_iso_operator(Ũ⃗ₜ)
+    δŨ = Ũₜ₊₁ - expv(Δtₜ, Gₜ, Ũₜ)
+    return iso_operator_to_iso_vec(δŨ)
 end
