@@ -4,6 +4,10 @@ export AbstractIntegrator
 
 export QuantumIntegrator
 
+export QuantumExpvIntegrator
+export QuantumStateExpvIntegrator
+export UnitaryExpvIntegrator
+
 export QuantumPadeIntegrator
 export QuantumStatePadeIntegrator
 export UnitaryPadeIntegrator
@@ -210,6 +214,8 @@ abstract type AbstractIntegrator end
 abstract type QuantumIntegrator <: AbstractIntegrator end
 
 abstract type QuantumPadeIntegrator <: QuantumIntegrator end
+
+abstract type QuantumExpvIntegrator <: QuantumIntegrator end
 
 
 function comps(P::AbstractIntegrator, traj::NamedTrajectory)
@@ -1178,8 +1184,6 @@ end
 ###
 ### Expv Integrator (compare to Pade)
 ###
-
-abstract type QuantumExpvIntegrator <: QuantumIntegrator end
 
 # StateExpv
 struct QuantumStateExpvIntegrator{R <: Number} <: QuantumExpvIntegrator
