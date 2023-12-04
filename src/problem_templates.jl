@@ -113,6 +113,7 @@ function UnitarySmoothPulseProblem(
     a_bound::Float64=1.0,
     a_bounds::Vector{Float64}=fill(a_bound, length(system.G_drives)),
     a_guess::Union{Matrix{Float64}, Nothing}=nothing,
+    a_track::Union{Matrix{Float64}, Nothing}=nothing,
     dda_bound::Float64=1.0,
     dda_bounds::Vector{Float64}=fill(dda_bound, length(system.G_drives)),
     Δt_min::Float64=0.5 * Δt,
@@ -266,7 +267,7 @@ function UnitarySmoothPulseProblem(
     end
 
     J = UnitaryInfidelityObjective(:Ũ⃗, traj, Q; subspace=subspace)
-    J += QuadraticRegularizer(:a, traj, R_a)
+    J += QuadraticRegularizer(:a, traj, R_a; values=a_track)
     J += QuadraticRegularizer(:da, traj, R_da)
     J += QuadraticRegularizer(:dda, traj, R_dda)
 
