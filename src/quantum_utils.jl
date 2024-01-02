@@ -1,6 +1,7 @@
 module QuantumUtils
 
 export GATES
+export gate
 export ⊗
 export apply
 export qubit_system_state
@@ -292,6 +293,17 @@ end
     unitary subspace utilities
 """
 
+"""
+    subspace_unitary(
+        levels::Vector{Int},
+        gate_name::Symbol,
+        qubit::Union{Int, Vector{Int}}
+    )
+
+Get a unitary matrix for a gate acting on a subspace of a multilevel system.
+
+TODO: reimplement this as `embed_operator` with more methods.
+"""
 function subspace_unitary(
     levels::Vector{Int},
     gate_name::Symbol,
@@ -424,6 +436,9 @@ function subspace_leakage_indices(
     )
     return setdiff(1:length(basis), subspace_indices)
 end
+
+subspace_leakage_indices(levels::Int; kwargs...) =
+    subspace_leakage_indices([levels]; kwargs...)
 
 subspace_leakage_indices(levels::AbstractVector{Int}; subspace_max=2, kwargs...) =
     subspace_leakage_indices(fill(subspace_max, length(levels)), levels; kwargs...)
