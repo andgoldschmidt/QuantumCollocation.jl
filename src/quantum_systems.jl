@@ -5,6 +5,7 @@ export QuantumSystem
 export MultiModeSystem
 
 export iso
+export ⊕
 
 using ..QuantumUtils
 
@@ -329,6 +330,41 @@ function MultiModeSystem(
         H_drift,
         H_drives;
         params=params
+    )
+end
+
+
+function ⊕(A::AbstractMatrix, B::AbstractMatrix)
+    return [A zeros((size(A, 1), size(B, 2))); zeros((size(B, 1), size(A, 2))) B]
+end
+
+"""
+    ⊕(sys₁::QuantumSystem, sys₂::QuantumSystem; R::DataType=Float64)::QuantumSystem
+
+Returns the direct sum of two `QuantumSystem` objects.
+"""
+function ⊕(sys₁::QuantumSystem, sys₂::QuantumSystem; R::DataType=Float64)
+    H_drift_real = sys₁.H_drift_real ⊕ sys₂.H_drift_real
+    H_drift_imag = sys₁.H_drift_imag ⊕ sys₂.H_drift_imag
+    HZ₁ = spzeros(size(sys₁.H_drift_real))
+    HZ₂ = spzeros(size(sys₂.H_drift_real))
+    H_drives_real = [
+        [H ⊕ HZ₂ for H ∈ sys₁.H_drives_real]...,
+        [HZ₁ ⊕ H for H ∈ sys₂.H_drives_real]...
+    ]
+    H_drives_imag = [
+        [H ⊕ HZ₂ for H ∈ sys₁.H_drives_imag]...,
+        [HZ₁ ⊕ H for H ∈ sys₂.H_drives_imag]...
+    ]
+    # TODO: Is merge safe?
+    return QuantumSystem{R}(
+        H_drift_real,
+        H_drift_imag,
+        H_drives_real,
+        H_drives_imag,
+        QuantumSystems.G(H_drift_real + im * H_drift_imag),
+        QuantumSystems.G.(H_drives_real .+ im * H_drives_imag),
+        merge(sys₁.params, sys₂.params)
     )
 end
 
