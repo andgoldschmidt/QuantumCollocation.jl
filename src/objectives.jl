@@ -13,6 +13,7 @@ export InfidelityRobustnessObjective
 export QuadraticRegularizer
 export QuadraticSmoothnessRegularizer
 export L1Regularizer
+export UnitaryPairwiseQuadraticRegularizer
 
 using TrajectoryIndexingUtils
 using ..QuantumUtils
@@ -585,6 +586,178 @@ function QuadraticSmoothnessRegularizer(
         R=R * ones(traj.dims[name]),
         kwargs...
     )
+end
+
+"""
+    UnitaryPairwiseQuadraticRegularizer(
+        Q::AbstractVector{<:Real},
+        times::AbstractVector{Int},
+        Ũ⃗₁_indices::AbstractVector{Int},
+        Ũ⃗₂_indices::AbstractVector{Int};
+        name::Symbol=:Ũ⃗,
+        timestep_symbol::Symbol=:Δt,
+        eval_hessian::Bool=false,
+    )
+
+Create a pairwise quadratic regularizer for the trajectory component `name` with
+regularization strength `Q`. The regularizer is defined as
+
+```math
+J_{Ũ⃗}(u) = \\sum_t \frac{1}{2} \Delta t_t^2 (Ũ⃗_{1,t} - Ũ⃗_{2,t})^T Q (Ũ⃗_{1,t} - Ũ⃗_{2,t})
+```
+
+where $Ũ⃗_{1}$ and $Ũ⃗_{2}$ are selected by `Ũ⃗₁_indices` and `Ũ⃗₂_indices`. The
+indices specify the appropriate block diagonal components of the direct sum 
+unitary vector `Ũ⃗`.
+
+TODO: Hessian not implemented
+"""
+function UnitaryPairwiseQuadraticRegularizer(
+    Q::AbstractVector{<:Real},
+    times::AbstractVector{Int},
+    Ũ⃗₁_indices::AbstractVector{Int},
+    Ũ⃗₂_indices::AbstractVector{Int};
+    name::Symbol=:Ũ⃗,
+    timestep_symbol::Symbol=:Δt,
+    eval_hessian::Bool=false,
+)
+    params = Dict(
+        :type => :UnitaryPairwiseQuadraticRegularizer,
+        :times => times,
+        :name => name,
+        :Q => Q,
+        :eval_hessian => eval_hessian,
+        :Ũ⃗₁_indices => Ũ⃗₁_indices,
+        :Ũ⃗₂_indices => Ũ⃗₂_indices
+    )
+
+    @views function L(Z⃗::AbstractVector{<:Real}, Z::NamedTrajectory)
+        J = 0.0
+        for t ∈ times
+            if Z.timestep isa Symbol
+                Δt = Z⃗[slice(t, Z.components[timestep_symbol], Z.dim)]
+            else
+                Δt = Z.timestep
+            end
+            
+            Ũ⃗ₜ = Z⃗[slice(t, Z.components[name], Z.dim)]
+            rₜ = Δt .* (Ũ⃗ₜ[Ũ⃗₁_indices] .- Ũ⃗ₜ[Ũ⃗₂_indices])
+            J += 0.5 * rₜ' * (Q .* rₜ)
+        end
+        return J
+    end
+
+    @views function ∇L(Z⃗::AbstractVector{<:Real}, Z::NamedTrajectory)
+        ∇ = zeros(Z.dim * Z.T)        
+        Threads.@threads for t ∈ times
+            Ũ⃗ₜ_slice = slice(t, Z.components[name], Z.dim)
+            Ũ⃗₁_slice_indices = Ũ⃗ₜ_slice[Ũ⃗₁_indices]
+            Ũ⃗₂_slice_indices = Ũ⃗ₜ_slice[Ũ⃗₂_indices]
+            Ũ⃗₁ = Z⃗[Ũ⃗₁_slice_indices]
+            Ũ⃗₂ = Z⃗[Ũ⃗₂_slice_indices]
+
+            if Z.timestep isa Symbol
+                Δt_slice = slice(t, Z.components[timestep_symbol], Z.dim)
+                Δt = Z⃗[Δt_slice]
+                ∇[Δt_slice] .= (Ũ⃗₁ .- Ũ⃗₂)' * (Q .* (Δt .* (Ũ⃗₁ .- Ũ⃗₂)))
+            else
+                Δt = Z.timestep
+            end
+
+            ∇[Ũ⃗₁_slice_indices] .= Q .* (Δt.^2 .* (Ũ⃗₁ .- Ũ⃗₂))
+            ∇[Ũ⃗₂_slice_indices] .= Q .* (Δt.^2 .* (Ũ⃗₂ .- Ũ⃗₁))
+        end
+        return ∇
+    end
+
+    ∂²L = nothing
+    ∂²L_structure = nothing
+
+    if eval_hessian
+        throw(ErrorException("Hessian not implemented"))
+    end
+
+    return Objective(L, ∇L, ∂²L, ∂²L_structure, Dict[params])
+end
+
+"""
+    UnitaryPairwiseQuadraticRegularizer(
+        Qs::AbstractVector{<:Real},
+        graph::AbstractVector{<:AbstractVector{Int}},
+        num_systems::Int;
+        name::Symbol=:Ũ⃗,
+        kwargs...
+    )
+
+A convenience constructor for creating a UnitaryPairwiseQuadraticRegularizer
+for the trajectory component `name` with regularization strength `Qs` over the
+graph `graph`. 
+
+The graph is a vector of pairs of indices which define the pairs
+of unitaries to be regularized. The direct sum unitary vector `Ũ⃗` is assumed to
+contain `num_systems` identical quantum system blocks along the diagonal.
+
+The regularizer is defined as
+
+```math
+J_{Ũ⃗}(u) = \sum_{(i,j) \in E} \frac{1}{2} d(Ũ⃗_{i}, Ũ⃗_{j}; Q_{ij})
+```
+
+where $d(Ũ⃗_{i}, Ũ⃗_{j}; Q_{ij})$ is the pairwise distance between the unitaries with 
+weight $Q_{ij}$.
+"""
+function UnitaryPairwiseQuadraticRegularizer(
+    traj::NamedTrajectory,
+    Qs::Union{Float64, AbstractVector{<:Float64}},
+    graph::AbstractVector{<:AbstractVector{Int}},
+    num_systems::Int;
+    name::Symbol=:Ũ⃗,
+    kwargs...
+)   
+    @assert all(length.(graph) .== 2) "Graph must be a vector of pairs"
+    
+    if isa(Qs, Float64)
+        Qs = Qs * ones(length(graph))
+    end
+    @assert all(length(graph) == length(Qs)) "Graph and Qs must have same length"
+    
+    # Undo real/imag, undo vectorization
+    # Select block
+    # Redo vectorization, redo real/imag
+    dim = (isqrt(traj.dims[name] ÷ 2) ÷ num_systems)^2 * 2
+
+    # Select indices
+    Ũ⃗_inds = map(1:num_systems) do row
+        blocks = map(1:num_systems) do col
+            col==row ? ones(dim) : zeros(dim)
+        end
+        findall(reduce(⊕, blocks) .≈ 1)
+    end
+
+    J = DefaultObjective()
+    for (Qᵢⱼ, (i, j)) ∈ zip(Qs, graph)
+        J += UnitaryPairwiseQuadraticRegularizer(
+            Qᵢⱼ * ones(dim), 
+            1:traj.T,
+            Ũ⃗_inds[i],
+            Ũ⃗_inds[j],
+            name=name,
+            kwargs...
+        )  
+    end
+
+    return J
+end
+
+function UnitaryPairwiseQuadraticRegularizer(
+    traj::NamedTrajectory,
+    Q::Float64;
+    kwargs...
+)
+    return UnitaryPairwiseQuadraticRegularizer(
+        traj, Q, [[1,2]], 2;
+        kwargs...
+    )   
 end
 
 function L1Regularizer(;
