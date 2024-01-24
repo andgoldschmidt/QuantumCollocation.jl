@@ -54,8 +54,8 @@ function Base.:+(obj1::Objective, obj2::Objective)
 	L = (Z⃗, Z) -> obj1.L(Z⃗, Z) + obj2.L(Z⃗, Z)
 	∇L = (Z⃗, Z) -> obj1.∇L(Z⃗, Z) + obj2.∇L(Z⃗, Z)
 	if isnothing(obj1.∂²L) && isnothing(obj2.∂²L)
-		∂²L = Nothing
-		∂²L_structure = Nothing
+		∂²L = nothing
+		∂²L_structure = nothing
 	elseif isnothing(obj1.∂²L)
 		∂²L = (Z⃗, Z) -> obj2.∂²L(Z⃗, Z)
 		∂²L_structure = obj2.∂²L_structure
@@ -588,7 +588,7 @@ function QuadraticSmoothnessRegularizer(
     )
 end
 
-"""
+@doc raw"""
     UnitaryPairwiseQuadraticRegularizer(
         Q::AbstractVector{<:Real},
         times::AbstractVector{Int},
@@ -603,7 +603,7 @@ Create a pairwise quadratic regularizer for the trajectory component `name` with
 regularization strength `Q`. The regularizer is defined as
 
 ```math
-J_{Ũ⃗}(u) = \\sum_t \frac{1}{2} \Delta t_t^2 (Ũ⃗_{1,t} - Ũ⃗_{2,t})^T Q (Ũ⃗_{1,t} - Ũ⃗_{2,t})
+    J_{Ũ⃗}(u) = \sum_t \frac{1}{2} \Delta t_t^2 (Ũ⃗_{1,t} - Ũ⃗_{2,t})^T Q (Ũ⃗_{1,t} - Ũ⃗_{2,t})
 ```
 
 where $Ũ⃗_{1}$ and $Ũ⃗_{2}$ are selected by `Ũ⃗₁_indices` and `Ũ⃗₂_indices`. The
@@ -680,7 +680,7 @@ function UnitaryPairwiseQuadraticRegularizer(
     return Objective(L, ∇L, ∂²L, ∂²L_structure, Dict[params])
 end
 
-"""
+@doc raw"""
     UnitaryPairwiseQuadraticRegularizer(
         Qs::AbstractVector{<:Real},
         graph::AbstractVector{<:AbstractVector{Int}},
