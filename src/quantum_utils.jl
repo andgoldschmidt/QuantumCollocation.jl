@@ -3,6 +3,7 @@ module QuantumUtils
 export GATES
 export gate
 export ⊗
+export ⊕
 export apply
 export qubit_system_state
 export lift
@@ -40,6 +41,16 @@ using LinearAlgebra
 
 ⊗(A::AbstractVecOrMat, B::AbstractVecOrMat) = kron(A, B)
 
+"""
+    direct sum utilities
+"""
+function ⊕(A::AbstractMatrix, B::AbstractMatrix)
+    return [A zeros((size(A, 1), size(B, 2))); zeros((size(B, 1), size(A, 2))) B]
+end
+
+function ⊕(Ã⃗::AbstractVector, B̃⃗::AbstractVector)
+    return operator_to_iso_vec(iso_vec_to_operator(Ã⃗) ⊕ iso_vec_to_operator(B̃⃗))
+end
 
 """
     quantum gates

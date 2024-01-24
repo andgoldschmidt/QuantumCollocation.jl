@@ -3,12 +3,14 @@ module ProblemTemplates
 export UnitarySmoothPulseProblem
 export UnitaryMinimumTimeProblem
 export UnitaryRobustnessProblem
+export UnitaryDirectSumProblem
 
 export QuantumStateSmoothPulseProblem
 export QuantumStateMinimumTimeProblem
 
 using ..QuantumSystems
 using ..QuantumUtils
+import ..QuantumUtils: ⊕
 using ..Rollouts
 using ..Objectives
 using ..Constraints
@@ -480,6 +482,158 @@ function UnitaryRobustnessProblem(
     )
 end
 
+@doc """
+    UnitaryDirectSumProblem(probs, final_fidelity; kwargs...)
+
+Construct a `QuantumControlProblem` as a direct sum of unitary gate problems. The 
+purpose is to find solutions that are as close as possible in the sense of the
+trajectories of the unitaries that implement each gate. In particular, this is 
+useful for finding interpolatable control solutions.
+
+    TODO: Direct sum problems are more general than this. The main innovation
+    is to use objectives to couple otherwise uncoupled problems.
+
+A graph of edges will enforce a `UnitaryPairwiseQuadraticRegularizer` between
+the unitary trajectories of the problem in `probs` corresponding to the index of
+the edge in `edges` with corresponding edge weight `Q`.
+
+The default behavior is to use a 1D chain for the graph, i.e., enforce a 
+`UnitaryPairwiseQuadraticRegularizer` between each neighbor of the provided `probs`.
+
+# Arguments
+
+- `probs::AbstractVector{<:QuantumControlProblem}`: the problems to combine
+- `final_fidelity::Real`: the fidelity to enforce between the component final unitaries and the component goal unitaries
+
+# Keyword Arguments
+
+- `graph::Union{Nothing, AbstractVector{<:AbstractVector{<:Int}}}=nothing`: the graph of edges to enforce
+- `Q::Union{Float64, Vector{Float64}}=100.0`: the weights on the pairwise regularizers
+- `R::Float64=1e-2`: the shared weight on all control terms
+- `R_a::Union{Float64, Vector{Float64}}=R`: the weight on the regularization term for the control pulses
+- `R_da::Union{Float64, Vector{Float64}}=R`: the weight on the regularization term for the control pulse derivatives
+- `R_dda::Union{Float64, Vector{Float64}}=R`: the weight on the regularization term for the control pulse second derivatives
+- `subspace::Union{AbstractVector{<:Integer}, Nothing}=nothing`: the subspace to use for the fidelity
+- `pade_order=4`: the order of the Pade approximation to use for the unitary integrator
+- `autodiff=pade_order!=4`: whether or not to use automatic differentiation for the unitary integrator
+- `hessian_approximation=true`: whether or not to use L-BFGS hessian approximation in Ipopt
+- `ipopt_options::Options=Options()`: the options for the Ipopt solver
+
+"""
+function UnitaryDirectSumProblem(
+    probs::AbstractVector{<:QuantumControlProblem},
+    final_fidelity::Real;
+    graph::Union{Nothing, AbstractVector{<:AbstractVector{<:Int}}}=nothing,
+    Q::Union{Float64, Vector{Float64}}=100.0,
+    R::Float64=1e-2,
+    R_a::Union{Float64, Vector{Float64}}=R,
+    R_da::Union{Float64, Vector{Float64}}=R,
+    R_dda::Union{Float64, Vector{Float64}}=R,
+    subspace::Union{AbstractVector{<:Integer}, Nothing}=nothing,
+    pade_order=4,
+    hessian_approximation=true,
+    autodiff=pade_order!=4,
+    ipopt_options=Options(),
+    kwargs...
+)
+    if hessian_approximation
+        ipopt_options.hessian_approximation = "limited-memory"
+    end
+
+    if isnothing(graph)
+        graph = [[i, j] for (i, j) ∈ zip(1:length(probs)-1, 2:length(probs))]
+    end
+
+    traj = reduce(⊕, [p.trajectory for p ∈ probs])
+    sys = reduce(⊕, [p.system for p ∈ probs])
+    integ = [
+        UnitaryPadeIntegrator(sys, :Ũ⃗, :a; order=pade_order, autodiff=autodiff),
+        DerivativeIntegrator(:a, :da, traj),
+        DerivativeIntegrator(:da, :dda, traj),
+    ]
+
+    # Rebuild trajectory constraints
+    build_trajectory_constraints = true
+    constraints = AbstractConstraint[]
+
+    # Add fidelity constraint
+    fidelity_constraint = FinalUnitaryFidelityConstraint(
+        :Ũ⃗,
+        final_fidelity,
+        traj;
+        subspace=subspace
+    )
+    push!(constraints, fidelity_constraint)
+
+    # Build the objective function
+    J = UnitaryPairwiseQuadraticRegularizer(traj, Q, graph, length(probs))
+    J += QuadraticRegularizer(:a, traj, R_a)
+    J += QuadraticRegularizer(:da, traj, R_da)
+    J += QuadraticRegularizer(:dda, traj, R_dda)
+
+    return QuantumControlProblem(
+        sys,
+        traj,
+        J,
+        integ;
+        constraints=constraints,
+        ipopt_options=ipopt_options,
+        hessian_approximation=hessian_approximation,
+        eval_hessian=!hessian_approximation,
+        build_trajectory_constraints=build_trajectory_constraints,
+        kwargs...
+    )
+end
+
+function ⊕(traj₁::NamedTrajectory, traj₂::NamedTrajectory)
+    # TODO: Free time problem
+    if traj₁.timestep isa Symbol || traj₂.timestep isa Symbol
+        throw(ErrorException("Free time problems not supported"))
+    end
+
+    if traj₁.timestep != traj₂.timestep
+        throw(ErrorException("Timesteps must be equal"))
+    end
+
+    components = (
+        Ũ⃗ = stack(
+            map(zip(eachcol(traj₁[:Ũ⃗]), eachcol(traj₂[:Ũ⃗]))) do (c1, c2)
+                c1 ⊕ c2
+            end
+        ),
+        a = vcat(traj₁[:a], traj₂[:a]),
+        da = vcat(traj₁[:da], traj₂[:da]),
+        dda = vcat(traj₁[:dda], traj₂[:dda]),
+    )
+
+    bounds = (
+        a = vcat.(traj₁.bounds.a, traj₂.bounds.a),
+        dda = vcat.(traj₁.bounds.a, traj₂.bounds.a),
+    )
+
+    initial = (
+        Ũ⃗ = traj₁.initial[:Ũ⃗] ⊕ traj₂.initial[:Ũ⃗],
+        a = vcat(traj₁.initial[:a], traj₂.initial[:a])
+    )
+
+    final = (
+        a = vcat(traj₁.final[:a], traj₂.final[:a]),
+    )
+
+    goal = (
+        Ũ⃗ = traj₁.goal[:Ũ⃗] ⊕ traj₂.goal[:Ũ⃗],
+    )
+
+    return NamedTrajectory(
+        components;
+        controls=(:dda,),
+        timestep=traj₁.timestep,
+        bounds=bounds,
+        initial=initial,
+        final=final,
+        goal=goal
+    )
+end
 
 # ------------------------------------------
 # Quantum State Problem Templates

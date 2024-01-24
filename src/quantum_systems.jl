@@ -5,9 +5,9 @@ export QuantumSystem
 export MultiModeSystem
 
 export iso
-export ⊕
-
+ 
 using ..QuantumUtils
+import ..QuantumUtils: ⊕
 
 using LinearAlgebra
 using SparseArrays
@@ -333,10 +333,6 @@ function MultiModeSystem(
     )
 end
 
-
-function ⊕(A::AbstractMatrix, B::AbstractMatrix)
-    return [A zeros((size(A, 1), size(B, 2))); zeros((size(B, 1), size(A, 2))) B]
-end
 
 """
     ⊕(sys₁::QuantumSystem, sys₂::QuantumSystem; R::DataType=Float64)::QuantumSystem
